@@ -1,6 +1,8 @@
 import cv2
 from cvzone.HandTrackingModule import HandDetector 
 import handDetector as htm
+import cvzone
+import numpy as np
 
 cap = cv2.VideoCapture(0)
 cap.set(3, 1280)
@@ -13,17 +15,35 @@ colorR = (255, 0, 255)
 
 cx, cy, w, h = 100, 100, 200, 200
 
+class DragRect():
+    def __init__(self, posCenter, size=[200, 200]):
+        self.posCenter = posCenter
+        self.size = size
+
+    def update(self, cursor):
+        posCenter = self.posCenter
+        if len(posCenter) == 2:
+            cx, cy = posCenter
+            w, h = self.size
+
+            # If the index finger tip is in the rectangle region
+            if cx - w // 2 < cursor[0] < cx + w // 2 and \
+                    cy - h // 2 < cursor[1] < cy + h // 2:
+                self.posCenter = cursor
+
+
+rectList = []
+for x in range(5):
+    rectList.append(DragRect([x * 250 + 150, 150]))
+
 while True:
     success, img = cap.read()
     if not success:
         print("Failed to read frame from video capture. Check your camera connection.")
         break
     img = cv2.flip(img, 1)
-    #img = detector.findHands(img)
     hands, img = detector.findHands(img)  # with draw
     # hands = detector.findHands(img, draw=False) # without draw
-    # lmList, _ = detector.findPositions(img)
-    #lmList, _ = (detector.findDistance(8, 12, img))
 
     if hands:
         # Information for the first hand detected
@@ -35,42 +55,36 @@ while True:
 
         # Count the number of fingers up for the first hand
         fingers1 = detector.fingersUp(hand1)
-        print(f'H1 = {fingers1.count(1)}', end=" ")  # Print the count of fingers that are up
+        # print(f'H1 = {fingers1.count(1)}', end=" ")  # Print the count of fingers that are up
 
         # Calculate distance between specific landmarks on the first hand and draw it on the image
-        length, info, img = detector.findDistance(lmList1[8][0:2], lmList1[12][0:2], img, color=(255, 0, 255),
+        length, info, img = detector.findDistance(lmList1[4][0:2], lmList1[8][0:2], img, color=(255, 0, 255),
                                                   scale=10)
 
-        # Check if a second hand is detected
-        if len(hands) == 2:
-            # Information for the second hand
-            hand2 = hands[1]
-            lmList2 = hand2["lmList"]
-            bbox2 = hand2["bbox"]
-            center2 = hand2['center']
-            handType2 = hand2["type"]
+        # print(length, info)  # Print the length and the information about the distance
 
-            # Count the number of fingers up for the second hand
-            fingers2 = detector.fingersUp(hand2)
-            print(f'H2 = {fingers2.count(1)}', end=" ")
-
-            # Calculate distance between the index fingers of both hands and draw it on the image
-            length, info, img = detector.findDistance(lmList1[8][0:2], lmList2[8][0:2], img, color=(255, 0, 0),
-                                                      scale=10)
-
-        print(" ")  # New line for better readability of the printed output
-
-    """
-    lmList, _ = detector.findPosition(img)
-
-    if lmList:
-        l, _, _ = detector.findDistance(8, 12, img, draw=False)
-        print(l)
-        if l < 30:
-            cursor = lmList[8] # index finger tip landmark
+        if length < 30:
+            cursor = lmList1[8]  # index finger tip landmark
             # call the update here
-    """
+            for rect in rectList:
+                rect.update(cursor)    
+
+    imgNew = np.zeros_like(img, np.uint8)
+    
+    for rect in rectList:
+        posCenter = rect.posCenter
+        if len(posCenter) == 2:
+            cx, cy = posCenter
+            w, h = rect.size
+            cv2.rectangle(imgNew, (cx - w // 2, cy - h // 2),
+                        (cx + w // 2, cy + h // 2), colorR, cv2.FILLED)
+            cvzone.cornerRect(imgNew, (cx - w // 2, cy - h // 2, w, h), 20, rt=0)
 
     out = img.copy()
+
+    alpha = 0.5
+    mask = imgNew.astype(bool)
+    out[mask] = cv2.addWeighted(img, alpha, imgNew, 1 - alpha, 0)[mask]
+
     cv2.imshow("Image", out)
     cv2.waitKey(1)
